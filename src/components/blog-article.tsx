@@ -19,6 +19,7 @@ import Pre from './mdx/pre';
 type Props = {
   source: MDXRemoteSerializeResult;
 }
+
 const components = {
   h1: H1,
   h2: H2,

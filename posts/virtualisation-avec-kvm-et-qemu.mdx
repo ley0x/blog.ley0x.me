@@ -1,0 +1,120 @@
+---
+date: 04/11/2023
+title: "La virtualisation avec KVM et QEMU, partie 1"
+description: "Découvrez l'hyperviseur natif au noyeau linux"
+image: '/posts/kvm-qemu/virtualisation-header.jpg'
+tags: "linux virtualisation"
+author: "@ley0x_"
+lang: "fr"
+---
+
+## Virtualisation, hyperviseurs, KVM ?
+
+Afin d'exécuter des machines virtuelles sur votre poste vous devez disposer d'un **hyperviseur**. Un hyperviseur est une couche logicielle qui permet aux machines virtuelles d'accéder aux ressources dont elle a besoin comme la RAM et le CPU.
+
+Il existe 2 types d'hyperviseurs :
+- **Hyperviseurs de type 1** : Souvent appelés « bare-metal » ils sont installés directement sur le matériel et accèdent directement aux ressources. 
+	- **Hyper-V** et **ESXi** sont des hyperviseurs de type 1.
+- **Hyperviseurs de type 2** : Ces hyperviseurs ont besoin d'un OS hôte pour fonctionner et donc ne peuvent pas accéder directement aux ressources matériels. Ils sont faciles à installer mais sont souvent moins performant.
+	- **VMware Workstation** et **VirtualBox** sont des hyperviseurs de type 2.
+
+## Qu'est-ce que KVM et QEMU ?
+
+### KVM
+
+
+- **KVM** (pour Kernel-based Virtual Machine) est un hyperviseur de **type 1** nativement présent dans le noyau linux.
+- Il est **open-source** et a accès directement aux ressources matérielles.
+
+Les performances avec **KVM** sont souvent bien supérieures à un hyperviseur de type 2 comme **VirtualBox** par exemple.
+Cela s'explique par les fonctions de **passthrough**; par exemple, les instructions vCPU (virtual CPU) des machines virtuelles n'ont pas besoin d'être traduites mais sont simplement envoyée au processeur de la machine hôte.
+
+<Tip>
+Il est également possible de faire un GPU passthrough pour bénéficier de la pleine puissance de votre carte graphique à l'intérieur de vos VMs.
+</Tip>
+
+### QEMU
+
+- **QEMU** (**Q**uick **Emu**lator) est un émulateur, il peut émuler différentes architectures de processeurs, même différentes du système hôte.
+- **QEMU** peut également émuler des périphériques comme des disques durs, clés USB, interfaces ethernets, cartes sons...
+
+<Tip>
+[Différence entre virtualisation et émulation](https://openclassrooms.com/fr/courses/2581701-simulez-des-architectures-reseaux-avec-gns3/4823141-emuler-simuler-virtualiser-de-quoi-parle-t-on)
+</Tip>
+
+### Utiliser KVM et QEMU ensembles
+
+**KVM** et **QEMU** (pour Quick Emulator) sont deux composants clés de la virtualisation et nous allons les utiliser ensemble.
+
+Nous allons utiliser KVM pour gérer les ressources matérielles comme la mémoire RAM, les CPUs, GPUs... Puis utiliser QEMU pour émuler toutes les ressources hardware comme les disques durs, interfaces ethernet, clés USB...
+
+## Installation
+
+Vous devez d'abord vérifier que la virtualisation est activée sur votre système. Pour ce faire :
+
+```shell
+LC_ALL=C lscpu | grep Virtualization
+```
+
+Si vous avez un processeur Intel --> **VT-x**, sinon sur AMD -> **AMD-V**.
+Si vous n'avez pas l'un de ces deux résultats, la virtualisation n'est pas activée.
+
+Ensuite, il faut installer tous les packages nécessaires :
+
+```shell
+sudo pacman -S qemu-full virt-manager virt-viewer dnsmasq bridge-utils libguestfs ebtables vde2 openbsd-netcat
+```
+
+Une fois les packages installés, ajoutez votre user au groupe `libvirt` :
+```shell
+sudo usermod -aG libvirt $USER
+```
+
+Ensuite, nous devons setup le daemon de **libvirt**, pour cela activons le et mettons le en auto-start :
+```shell showLineNumbers
+sudo systemctl start libvirtd.service
+sudo systemctl enable libvirtd.service
+```
+
+Une fois que c'est fait, vérifions qu'il est bien activé :
+
+```shell
+sudo systemctl status libvirtd.service
+```
+
+Si tout est OK, nous allons modifier la conf de **libvirt** :
+```shell
+sudo vim /etc/libvirt/libvirtd.conf
+```
+
+Il faut dé-commenter les lignes suivantes (ou les ajouter):
+```shell
+unix_sock_group = "libvirt"
+```
+
+```shell
+unix_sock_ro_perms = "0777"
+```
+
+```shell
+unix_sock_rw_perms = "0770"
+```
+
+Une fois les modifications faites, vous pouvez redémarrer le service :
+```shell
+systemctl restart libvirtd.service
+```
+
+Par défaut, **libvirt** utilise un profil par nommé «default», activons-le et mettons-le en auto-start :
+
+```shell
+sudo virsh net-start default
+```
+
+```shell
+sudo virsh net-autostart default
+```
+
+Maintenant, vous pouvez créer des VM en utilisant le CLI de QEMU ou bien en lançant l'application **virt-manager**.
+
+Dans la partie 2, nous verrons comment créer une machine virtuelle sous windows 11.

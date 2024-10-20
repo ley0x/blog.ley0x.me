@@ -1,0 +1,191 @@
+---
+date: 12/09/2023
+title: "Comment fonctionne un DNS et comment le changer sur Linux ?"
+description: "Apprenez le fonctionnement des serveurs DNS et comment le changer afin d'améliorer votre confidentialité sur internet et résister à la censure."
+image: '/posts/dns/dns-header.jpg'
+tags: 'linux network'
+author: '@ley0x_'
+lang: 'fr'
+---
+
+## Qu'est-ce qu'un DNS ?
+
+Un **Domain Name System** (DNS) est le protocole qui permet entre autre d'associer une adresse IP à un **FQDN** (Fully Qualified Domain Name). 
+
+Un serveur DNS possède plusieurs types d'enregistrements :
+- **A** : FQDN --> IPv4
+- **AAAA** : FQDN --> IPv6
+- **CNAME** : FQDN --> autre FQDN
+- **PTR** : IP --> FQDN
+- ...
+
+Ces enregistrements sont stockés dans ce qu'on appelle des **zones**. Chaque zone peut contenir des enregistrements pour un ou plusieurs FQDN. 
+
+Avant de continuer, il est important de comprendre la structure d'un FQDN :
+
+![FQDN](/posts/dns/fqdn.png)
+
+Il est composé :
+- d'un TLD (Top Level Domain), comme `.fr`, `.com`, `.org`...
+- d'un nom de domaine
+- d'un ou plusieurs sous-domaines
+
+Il existe 4 types de serveurs DNS, qui ont chacun leur rôle dans la résolution d'une requête DNS :
+
+- **Serveur DNS récursif (recursive DNS server)** : Serveur qui reçoit la requête DNS du client, et doit effectuer d'autres requêtes vers les autres serveurs DNS pour satisfaire cette demande client.
+- **Serveur DNS racine (Root DNS Server)** : Première étape dans la résolution DNS, redirige vers le bon serveur DNS de domaine de premier niveau.
+- **Serveur DNS de domaine de premier niveau (Top-Level Domain DNS Server)**  : Ces serveurs gèrent les requêtes pour les TLD spécifiques. Il en existe par exemple pour les FQDN en `.com` ou `.org`. Ils renvoient les requêtes vers les serveurs DNS autoritaires appropriés pour les sous-domaines.
+- **Serveur DNS autoritaire (Authoritative DNS Server)** : Contient les enregistrements DNS d'une ou plusieurs zone(s) DNS. Renvoie le résultat de la résolution.
+
+![Fonctionnement DNS](/posts/dns/fonctionnement-dns.jpg)
+
+Il existe plusieurs root servers à travers le monde :
+
+![Carte des serveurs DNS racine](/posts/dns/map-root-server.png)
+Ces serveurs sont gérés par 12 organisations différentes dont 2 européennes.
+
+## Pourquoi changer de DNS ?
+
+Les serveurs DNS sont des serveurs essentiels au fonctionnement d'internet et sont souvent fournis par les **FAI** (Orange, Bouygues...) ou **gouvernements**, et sont donc soumis aux lois en vigueur dans leur pays ainsi qu'a leurs propres choix.
+
+<Info>
+Les DNS des FAI sont souvent considérer comme **DNS menteurs** car ils peuvent prendre comme décision de stopper la résolution DNS de certains sites webs. Ils peuvent également enregistrer vos requêtes pour tracker votre activité...
+</Info>
+
+---
+
+<Tip>
+Pour vous protéger de la censure des DNS menteurs, il est important de __changer de DNS__.
+</Tip>
+
+## Changer son DNS
+
+La configuration DNS de votre système se trouve dans `/etc/resolv.conf`, il stocke les adresses des serveurs DNS que vous utilisez.
+
+Pour éditer ce fichier :
+
+```shell
+sudo vim /etc/resolv.conf
+```
+
+Supprimez son contenu puis ajoutez une ligne par DNS que vous souhaitez utiliser :
+
+```txt
+nameserver <ipv4 ou ipv6>
+```
+
+Voici une liste d'adresses IP de DNS qui pourraient vous intéresser :
+
+| Nom | IP | Type |
+| --- | -- | ---- |
+| OpenDNS | 208.67.222.222 | DNSv4 |
+| OpenDNS | 208.67.220.220 | DNSv4 |
+| OpenDNS | 2620:119:35::35 | DNSv6 |
+| OpenDNS | 2620:119:53::53 | DNSv6 |
+| CloudFlare | 1.1.1.1 | DNSv4 |
+| CloudFlare | 1.0.0.1 | DNSv4 |
+| CloudFlare | 2606:4700:4700::1111 | DNSv6 |
+| CloudFlare | 2606:4700:4700::1001 | DNSv6 |
+| Quad9 | 9.9.9.9 | DNSv4 |
+| Quad9 | 9.9.9.10 | DNSv4 |
+| Quad9 | 2620:fe::9 | DNSv6 |
+| Quad9 | 2620:fe::10 | DNSv6 |
+
+<Tip>
+Pensez à changer de serveur DNSv4 et DNSv6 si vous utilisez l'IPv6.
+</Tip>
+
+Voici un exemple de configuration pour utiliser Quad9 comme DNS :
+```txt
+nameserver 9.9.9.9
+nameserver 9.9.9.10
+nameserver 2620:fe::9
+nameserver 2620:fe::10
+```
+
+---
+
+<Tip>
+Certains réseaux WIFI publics peuvent bloquer le fait de changer de DNS par exemple via des règles firewall. Pour bypasser cette restriction vous pouvez utiliser un VPN et passer par leur propre serveurs DNS ou bien configurer votre serveur DNS via votre VPN.
+</Tip>
+
+
+## Comment faire pour que votre configuration ne sois pas écrasée ?
+
+Le fichier `/etc/resolv.conf` peut être modifier au redémarrage de votre système par votre client DHCP comme **Network Manager**. Si c'est le cas, il est possible qu'au prochain (re)démarrage de votre PC, votre DNS sois de nouveau celui de votre FAI.
+
+### Méthode 1 : NetworkManager (recommandé)
+
+Si votre client DHCP est **Network Manager** alors vous pouvez simplement modifier le fichier de configuration de Network Manager pour lui dire de ne plus modifier le fichier `/etc/resolv.conf`.
+
+En effet, quand on regarde dans le manuel, rubrique DNS, on peut observer :
+
+- **default** : NetworkManager will update /etc/resolv.conf to reflect the nameservers provided by currently active connections. The rc-manager setting
+           (below) controls how this is done.
+- **none** : NetworkManager will not modify resolv.conf. This implies rc-manager unmanaged
+
+Ainsi, modifiez le fichier `/etc/NetworkManager/NetworkManager.conf` :
+
+```shell
+sudo vim /etc/NetworkManager/NetworkManager.conf
+```
+
+Et rajoutez ceci :
+
+```txt
+[main]
+dns=none
+rc-manager=unmanaged
+```
+
+Une fois enregistré, il faut redémarrer Network Manager pour que la configuration prenne effet :
+
+```shell
+sudo systemctl restart NetworkManager
+```
+
+### Méthode 2 : chattr
+
+Dans cette section, nous allons interdire l'accès en écriture à `/etc/resolv.conf`, même à l'utilisateur root. Pour ce faire nous allons utiliser **chattr**.
+
+<Warning>
+Attention, cette méthode peut provoquer certains bugs de mises à jours de packages sur certaines distributionss linux. C'est le cas par exemple des distributions utilisant `systemd-resolved`, le résolveur DNS inclus à systemd. Ces bugs restent néanmoins très rares.
+</Warning>
+
+**chattr** (**cha**nge **attr**ibutes) est un utilitaire en ligne de commande permettant de changer les attributs d'un fichier.
+Sous linux, chaque fichier possède des permissions (lecture, écriture, exécution) et des attributs. Voici une liste d'attributs :
+- **a** : append only
+- **i** : immutable
+- **c** : compressed
+- ...
+
+Pour consulter les attributs des fichiers, vous pouvez utiliser la commande `lsattr`.
+Dans notre cas c'est l'attribut **i** qui nous intéresse qui permet de rendre un fichier immutable. Tapez simplement la commande :
+
+```shell
+sudo chattr +i /etc/resolv.conf
+```
+
+---
+
+<Tip>
+**chattr** peut avoir un autre intérêt : protéger ou augmenter le temps nécessaire pour la compromission de votre machine par certains malwares. En effet certains malwares remplacent votre DNS par un nouveau DNS compromis.
+Dans ce cas là, il est important de protéger également le fichier `/etc/hosts`.
+</Tip>
+
+Dans le cas où vous voudriez un jours re-modifier votre configuration DNS, tapez :
+
+```shell
+sudo chattr -i /etc/resolv.conf
+```
+Puis modifiez comme précédemment.
+
+## Vérification du DNS utilisé
+
+Une fois votre DNS changé, vous pouvez le vérifier en utilisant la commande `dig`.
+Si tout fonctionne, vous devriez observer une ligne du style :
+```txt
+;; SERVER: 9.9.9.9#53(9.9.9.9) (UDP)
+```
+
+Cette ligne indique l'IP du serveur DNS utilisé actuellement par votre système.

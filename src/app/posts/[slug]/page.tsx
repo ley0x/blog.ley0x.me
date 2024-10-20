@@ -1,32 +1,46 @@
 import { getSerializedPost, getPostSlugs } from '@/lib/mdx'
-import Layout from '@/components/layout'
 import BlogArticle from '@/components/blog-article'
-import TableOfContents from '@/components/table-of-contents'
 import Wrapper from '@/components/_common/wrapper'
 import { cn } from '@/lib/utils'
-import BackToTop from '@/components/back-to-top'
-import ScrollBar from '@/components/scroll-bar'
+import TableOfContents from '@/components/table-of-contents'
+import { useDate } from '@/hooks/use-date'
+import { Badge } from '@/components/ui/badge'
+import Image from 'next/image'
 
 export async function generateStaticParams() {
-  const posts = getPostSlugs()
+  const posts = getPostSlugs();
   return posts.map((slug) => ({ slug: slug.replace(/\.mdx$/, '') }))
 }
 
 export default async function Post({ params }: { params: { slug: string } }) {
-  const { meta, source } = await getSerializedPost(params.slug)
-  return (
-    <>
+  const { meta, source } = await getSerializedPost(params.slug);
+  const formattedDate = useDate(new Date(meta.date));
 
-      <h1 className="text-3xl font-bold mb-4">{meta.title}</h1>
-      <Layout className="flex flex-row gap-x-5">
-        <BackToTop />
-        <ScrollBar />
-        <TableOfContents />
-        <Wrapper>
-          <section className="w-full flex flex-col">
+  return (
+    <section className="w-full flex flex-col lg:px-6">
+      <div className="relative flex gap-x-0 lg:gap-x-5 2xl:gap-x-0">
+        <Wrapper className="flex-col py-4">
+          <header className='flex flex-col w-full gap-y-4'>
+            <div className='flex flex-row flex-wrap gap-2'>
+              {meta.tags.map((tag, i) => (
+                <Badge key={i} variant="outline-pink">{tag}</Badge>
+              ))}
+            </div>
+            <h1 className="text-3xl font-bold" id="title">{meta.title}</h1>
+            <h2 className='text-md text-white/80 font-semibold' id="author">{`${meta.author} / ${formattedDate}`}</h2>
+            <div className='relative flex h-80 rounded-xl overflow-hidden shadow'>
+              <Image
+                src={meta.image}
+                layout='fill'
+                objectFit='cover'
+                alt='Test alt'
+              />
+            </div>
+          </header>
+          <article className={cn("flex flex-col w-full mt-12")}>
             <div
               className={cn(
-                'flex flex-col w-full max-w-full prose prose-invert prose-lg px-8 marker:text-white',
+                'flex flex-col w-full max-w-full prose dark:prose-invert prose-lg marker:text-white',
                 'prose-img:rounded',
                 'prose-blockquote:border-pink-500/50',
                 'prose-hr:border-white/20',
@@ -36,12 +50,14 @@ export default async function Post({ params }: { params: { slug: string } }) {
                 'hover:after:prose-a:bg-pink-500/10 hover:after:prose-a:h-[24px]'
               )}
             >
-              <pre>{JSON.stringify(meta, null, 2)}</pre>
               <BlogArticle source={source} />
             </div>
-          </section>
+
+
+          </article>
         </Wrapper>
-      </Layout>
-    </>
+        <TableOfContents />
+      </div>
+    </section>
   )
 }

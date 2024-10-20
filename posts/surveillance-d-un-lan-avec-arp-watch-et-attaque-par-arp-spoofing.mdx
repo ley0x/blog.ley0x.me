@@ -1,0 +1,280 @@
+---
+title: "Surveillance d'un LAN avec arpwatch, exemple d'une attaque par ARP poisoning."
+description: "Apprenez à menu une attaque par ARP poisoning sur un réseau LAN et comment vous en protéger."
+image: '/posts/arp/arp-header.jpg'
+date: 14/05/2023
+tags: "network arp-poisoning"
+author: "@ley0x_"
+lang: "fr"
+---
+
+## Introduction
+
+L'**ARP** (Address Resolution Protocol) est un protocole permettant de faire correspondre une adresse IP à une adresse MAC.
+Le protocole ARP construit une table ARP en envoyant des paquets ARP à travers le réseau.
+Cette table permet d'associer les adresses IP / adresses MAC du réseau.
+
+Pour consulter cette table, vous pouvez simplement taper la commande `arp`.
+
+Dans cet article vous allez apprendre ce qu'est et comment mener une attaque par **ARP poisoning**, pour enfin apprendre à les détecter avec **arpwatch** et vous en protéger grâce à **ebtables**.
+
+---
+## Qu'est-ce que l'ARP  Spoofing (ou poisoning) ?
+
+L'ARP Spoofing ou ARP Poisoning permet à un attaquant de se faire passer par exemple pour la passerelle par défaut du réseau. 
+
+L'objectif est d'associer l'adresse MAC du pirate à l'adresse IP d'un autre hôte (la passerelle par défaut) de sorte que tout le trafic destiné à cette adresse IP soit envoyé au pirate.
+Cela passe par la corruption des tables ARP des hôtes du réseau.
+
+---
+## Configuration du lab docker
+
+Tout au long de cet article, vous allez apprendre comment réaliser ce type d'attaque, les détecter et les corriger. Pour cela, j'ai créer un lab docker que vous allez pouvoir télécharger sur ici sur [Github](https://github.com/leoroullois/surveillance-lan).
+
+```shell
+git clone https://github.com/leoroullois/surveillance-lan.git
+```
+
+Ce lab contient plusieurs machines :
+- **frontal** : fera office de ''**routeur**" et passerelle par défaut. Tous le trafic des autres machines passera par cette machine.
+- **attacker** : machine de l'attaquant
+- **client1** et **client2** : deux machines clients qui veulent communiquer.
+
+Les machines sont des Debian (dernière version), placées dans le réseau `192.168.1.0/24` .
+Tout le trafic est routé à travers la machine frontale, d'adresse IP `192.168.1.253` .
+Voici une représentation du réseau  :
+
+![Schéma](/posts/arp/arp_schema.png)
+
+<Tip>
+N'hésitez pas à vous référer à ce schéma tout au long de l'article.
+</Tip>
+Pour obtenir un shell dans les machines, vous devez d'abord lancer le docker :
+
+```shell
+docker compose up
+```
+
+Puis pour la machine **attacker** :
+
+```shell
+docker exec -ti arp_attacker /bin/bash
+```
+
+<Tip>
+Ouvrez un nouveau terminal et remplacez **attacker** par le nom des autres machines pour avoir un shell dans les autres machines.
+</Tip>
+
+
+Les manipulations à suivre sont à faire dans la machine `frontale`.
+Il faut tout d'abord démarrer le service rsyslog qui nous seras utile ensuite pour voir les logs d'arpwatch :
+
+```shell
+systemctl start rsyslog
+```
+
+Et on peut vérifier que le service tourne bien en arrière plan avec :
+
+```shell
+systemctl status rsyslog
+```
+
+<Info>
+- **Rsyslog** : est un logiciel qui centralise les logs et en particulier les logs du réseau IP.
+- Les manipulations ci-dessous vont permettre d'avoir les logs arpwatch dans un fichier autre que `/var/log/syslog`, où ils seraient noyés par tout un tas e logs lié au système.
+- En l'occurence, on veut stocker les logs arpwatch dans `/var/log/arpwatch/arpwatch.log`.
+</Info>
+
+Ensuite, on modifie la configuration de cette manière dans `/etc/rsyslog.conf`:
+
+```txt
+if $programname == 'arpwatch' and $msg contains 'sent bad hardware format' then ~
+if $programname == 'arpwatch' and $msg contains 'execl: /usr/lib/sendmail: No such file or
+directory' then ~
+if $programname == 'arpwatch' and $msg contains 'reaper' then ~
+if $programname == 'arpwatch' then /var/log/arpwatch/arpwatch.log
+if $programname == 'arpwatch' then ~
+```
+
+Puis on crée le fichier de log et on lui attribue les permissions en lecture et écriture :
+
+```shell
+mkdir /var/log/arpwatch
+touch /var/log/arpwatch/arpwatch.log
+chmod 666 /var/log/arpwatch/arpwatch.log
+```
+
+Et on restart le daemon **rsyslog** pour qu'il prenne en compte les modifications :
+
+```shell
+systemctl restart rsyslog
+```
+
+Pour voir les logs arpwatch, il suffit de regarder ici :
+
+```shell
+cat /var/log/arpwatch/arpwatch.log
+```
+
+Enfin, **arpwatch** tient une base de données des adresses MAC, et ceci pour chacune des interfaces surveillées.
+On peut retrouver cette base de données à l'emplacement `/var/lib/arpwatch/<IFNAME>.dat`
+
+<Example>
+Pour l'interface eth0, on peut lire la base de données de cette façon : `cat /var/lib/arpwatch/eth0.dat`.
+</Example>
+
+Concernant les machines **clients** et la machine **attacker**, on change la **default gateway** pour router tout le ttrafic à travers la machine frontal :
+
+```shell
+ip route change default via 192.168.1.253
+```
+
+Voilà, le lab docker est bien mis en place, nous pouvons passer à la configuration d'**arppwatch**.
+
+---
+## Configuration d'arpwatch
+**Arpwatch** est un outil qui va surveiller l'activité ARP sur votre réseau local. Il va tenir une base de données des correspondances adresses IP / MAC et loguer les événements.
+**Arpwatch** peut par exemple détecter les attaques par **ARP Spoofing**.
+
+Sur la machine frontal, **arpwatch** est déjà installé (cf. `Dockerfile`). Nous allons maintenant le configurer  pour surveiller notre LAN.
+
+On change le fichier de configuration `/etc/default/arpwatch` pour spécifier que l'on veut écouter sur l'interface `eth0` :
+
+```txt
+INTERFACES="eth0"
+ARGS="-N -p"
+IFACE_ARGS=""
+```
+
+<Tip>
+- L'argument **-N** désactive le rapport de tous bugs dans les logs.
+- L'argument **-p** désactive le mode promiscious. Cela fait moins de paquets  à analyser.
+</Tip>
+
+<Info>
+Le mode promiscious permet de recevoir tout les paquets même ceux n'ayant pas leur adresse MAC comme adresse MAC de destination. 
+</Info>
+
+Ensuite pour démarrer le service, on lance les 2 commandes suivantes :
+
+```shell
+update-rc.d arpwatch enable
+```
+```shell
+/etc/init.d/arpwatch start
+```
+
+Tout fonctionne :
+
+```txt
+root@frontal:/# ps -ef | grep arpwatch
+root 32 1 0 08:23 ? 00:00:00 /usr/sbin/arpwatch -i eth0 -f eth0.dat -N -p -F
+```
+A partir de maintenant, toute les anomalies ARP serons loggées dans le fichier `/var/log/arpwatch/arpwatch.log`.
+
+Voici une liste des messages qu'arpwatch peut envoyer :
+
+- **new activity** : Cette adresse MAC/IP est redevenu active après 6 mois ou plus d'inactivité.
+- **new station** : Cette adresse mac n'a jamais été vue précédemment.
+- **flip flop** : L'adresse ethernet a changé de l'adresse la plus récemment vue à la deuxième adresse la plus récemment vue.
+- **changed ethernet address** : l'hôte à changer d'adresse MAC.
+- **ethernet mismatch** : l'adresse MAC source ne correspond pas à l'adresse dans le paquet ARP.
+
+---
+## Attaque par ARP Spoofing.
+
+Pour réaliser cette attaque, nous allons utilise `arpspoof`.
+
+Initialement, voici la table ARP de la machine **client1** :
+
+![Table ARP](/posts/arp/arp_table.png)
+
+La table ARP permet d'associer une adresse **IP** à une adresse **MAC**.
+
+L'objectif de l'attaque est de modifier la tablbe ARP de **client1** pour faire correspondre à l'adresse **MAC** du routeur l'adresse **IP** de l'attaquant.
+
+Ainsi, tout les paquets destinés au routeur seront en faire envoyés à l'attaquant.
+Ensuite, on se fait passer nous pou la machine **client1** auprès du routeur pour renvoyer les paquets interceptés.
+
+Pour ce faire, sur la machine **attacker**, on lance l'attaque :
+
+```shell
+arpspoof -i eth0 192.168.1.253 -t 192.168.1.1 -r
+```
+
+Avec cette commande, on se fait passer pour la machine **frontal** auprès de la machine **client1** et pour **client1** auprès de la machine **frontal**.
+
+On voit dans les **logs arpwatch** que l'attaque à été détectée :
+
+![Logs arpwatch](/posts/arp/arp_arpwatch_logs.png)
+
+On peut re-regarder la table ARP de la machine **client1** :
+
+![Table ARP](/posts/arp/arp_table_2.png)
+On remarque que l'adresse IP du routeur **frontal** (`192.168.1.253`) est reliée à l'adresse MAC de l'attaquant (`02:42:c0:a8:01:03`).
+
+On peut regarder la table ARP de la machine **frontal** :
+
+![Table ARP](/posts/arp/arp_table_3.png)
+
+Ici on remarque que l'adresse IP de **client1** est relié  à l'adresse **MAC** de l'attaquant.
+
+Et si on tente de ping Google (`8.8.8.8`) depuis le **client**, on peut observer tout le trafic depuis la machine **attacker** :
+
+![TCP Dump](/posts/arp/arp_tcpdump.png)
+
+Nous sommes bien en situation de **MITM** (Man In The Middle).
+
+---
+## Bloquer les attaques ARP avec ebtables 
+
+L'outil en ligne de commandes `ebtables` permet de filtrer les paquets. Il met à disposition une table dans laquelle on peut rentrer des règles de filtrage.
+Voici un exemple de règle, permettant de bloquer les attaques par **ARP Poisining** :
+- L'adresse MAC correspondant à l'adresse ip `<IP>` ne peut pas être différente de `<MAC>`.
+Ainsi, si l'adresse MAC venait à changer suite à une attaque par ARP poisoning, la machine frontale bloquerait tout les paquets provenant de la machine attaquée.
+
+Voici la commande à exécuter pour ajouter cette règle :
+
+```shell
+ebtables -A FORWARD -p IPv4 --ip-src <ip_client> -s ! <mac_client> -j DROP
+```
+
+<Example>
+Une machine client d'adresse IP **192.168.1.1** et d'adresse MAC **02:42:c0:a8:01:01** :
+`ebtables -A FORWARD -p IPv4 --ip-src 192.168.1.1 -s ! 02:42:c0:a8:01:01 -j DROP`
+</Example>
+
+Et voici la commande qui liste toute les règles ebtables actuellement en place :
+
+```shell
+ebtables --list
+```
+
+![ebtables](/posts/arp/arp_ebtablees.png)
+
+Pour éviter d'écrire toutes les règles à la main, nous avons créer un petit script bash, se basant sur la table ARP, qui permet d'automatiquement ajouter toutes les règles.
+
+<Warning>
+Avant d'utiliser ce script, il faut s'assurer que le table ARP n'est pas corrompue.
+</Warning>
+
+```shell
+#!/bin/bash
+
+lines=`arp -an | awk '{print $2 "," $4}' | sed 's/(//;s/)//'`
+
+for line in $( echo -n $lines ) ; do
+  echo -e "\n======================================================================================\n"
+  mac=`echo $line | cut -d"," -f2`
+  ip=`echo $line | cut -d"," -f1`
+  echo "[IP] $ip"
+  echo "[MAC] $mac"
+  echo "[RULE] ebtables -A FORWARD -p IPv4 --ip-src $ip -s ! $mac -j DROP"
+  ebtables -A FORWARD -p IPv4 --ip-src $ip -s ! $mac -j DROP
+  done
+
+echo -e "\n======================================================================================\n"
+
+echo "List of all rules :"
+ebtables --list
+```

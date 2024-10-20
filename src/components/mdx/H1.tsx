@@ -2,7 +2,7 @@ import { FC, PropsWithChildren } from "react";
 
 const H1: FC<PropsWithChildren> = ({ children, ...props }) => {
   return (
-    <h1 id={anchor} {...props}>
+    <h1 {...props}>
       {children}
     </h1>
   );

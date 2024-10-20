@@ -14,12 +14,13 @@ export default function TableOfContents() {
   const [activeId, setActiveId] = useState<string>('')
 
   useEffect(() => {
-    const elements = Array.from(document.querySelectorAll('h2, h3, h4, h5, h6'))
+    const idToExclude = ['author', 'title'];
+    const elements = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
       .map((elem) => ({
         id: elem.id,
         text: elem.textContent ?? '',
         level: Number(elem.tagName.charAt(1))
-      }))
+      })).filter((elem) => !idToExclude.includes(elem.id))
     setHeadings(elements)
   }, [])
 
@@ -44,16 +45,20 @@ export default function TableOfContents() {
   }, [headings])
 
   return (
-    <aside className="relative w-64 hidden lg:flex">
-      <nav className="fixed toc w-64 p-2 bg-gray-50/5 rounded-lg shadow">
-        <p className="text-lg font-semibold mb-2">Table of Contents</p>
+    <aside className="w-96 max-w-full hidden xl:flex">
+      <nav className="fixed toc w-96 max-w-full p-2 mt-14 bg-accent/40 rounded-lg shadow">
+        <p className="text-lg font-semibold mb-2">On this page</p>
         <ul>
           {headings.map((heading) => (
             <li
               key={heading.id}
-              className={cn("w-56 flex flex-col justify-center content-center h-8 relative before:content-[''] before:flex before:h-full before:w-1 before:absolute before:left-0",
-                heading.level === 2 ? 'pl-3' : 'pl-5',
-                activeId === heading.id ? 'text-pink-500 before:bg-pink-500 font-medium' : 'before:bg-gray-50/20'
+              className={cn("w-full flex flex-col justify-center content-center h-8 relative before:content-[''] before:flex before:h-full before:w-[2px] before:absolute before:left-0",
+                {
+                  "pl-2": heading.level === 2,
+                  "pl-6": heading.level === 3,
+                  "pl-10": heading.level === 4
+                },
+                activeId === heading.id ? 'text-pink-500 before:bg-pink-500 font-medium' : 'before:bg-card-foreground/20'
               )}
             >
               <a href={`#${heading.id}`} onClick={(e) => {
