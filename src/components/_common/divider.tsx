@@ -1,8 +1,13 @@
+import { cx } from 'class-variance-authority';
 import React from 'react'
 
-const Divider = () => {
+type Props = {
+  className?: string;
+}
+
+const Divider = ({ className }: Props) => {
   return (
-    <div className="h-[2px] w-full bg-card-foreground/5"></div>
+    <div className={cx("h-[2px] w-full bg-card-foreground/5", className)}></div>
   )
 }
 

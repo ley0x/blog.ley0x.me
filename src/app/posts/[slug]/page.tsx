@@ -6,6 +6,7 @@ import TableOfContents from '@/components/table-of-contents'
 import { useDate } from '@/hooks/use-date'
 import { Badge } from '@/components/ui/badge'
 import Image from 'next/image'
+import Link from 'next/link'
 
 export async function generateStaticParams() {
   const posts = getPostSlugs();
@@ -27,7 +28,7 @@ export default async function Post({ params }: { params: { slug: string } }) {
               ))}
             </div>
             <h1 className="text-3xl font-bold" id="title">{meta.title}</h1>
-            <h2 className='text-md text-white/80 font-semibold' id="author">{`${meta.author} / ${formattedDate}`}</h2>
+            <h2 className='text-md text-white/80 font-semibold' id="author"><Link href={`https://x.com/${meta.author}`} className="hover:underline" target="_blank">{meta.author}</Link> / {formattedDate}</h2>
             <div className='relative flex h-80 rounded-xl overflow-hidden shadow'>
               <Image
                 src={meta.image}
