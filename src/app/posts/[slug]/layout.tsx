@@ -3,7 +3,7 @@ import ScrollBar from '@/components/scroll-bar'
 
 type Props = {
   children: React.ReactNode,
-  params: { slug: string }
+  params: Promise<{ slug: string }>
 }
 
 export default async function Layout({ children }: Props) {
