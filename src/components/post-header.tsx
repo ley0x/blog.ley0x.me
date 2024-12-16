@@ -22,9 +22,10 @@ const PostHeader = ({ meta }: Props) => {
       </div>
       <h1 className="text-3xl font-bold" id="title">{meta.title}</h1>
       <h2 className='text-md text-white/80 font-semibold' id="author"><Link href={`https://x.com/${meta.author}`} className="hover:underline" target="_blank">{meta.author}</Link> / {formattedDate}</h2>
-      <div className='relative object-cover flex h-80 rounded-xl overflow-hidden shadow'>
+      <div className='relative flex h-80 rounded-xl overflow-hidden shadow'>
         <Image
           src={meta.image}
+          className="object-cover"
           fill
           alt={meta.title}
         />

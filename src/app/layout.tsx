@@ -7,6 +7,7 @@ import NavBar from "@/components/layout/navbar";
 import { getAllPosts } from "@/lib/mdx";
 import Footer from "@/components/layout/footer";
 
+import { Analytics } from "@vercel/analytics/react"
 import { ThemeProvider } from "@/components/theme-provider"
 
 const geistSans = localFont({
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body
         className={cn(`${geistSans.variable} ${geistMono.variable} antialiased`, "flex flex-col justify-between min-h-screen relative bg-background text-foreground")}
       >
+        <Analytics />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
