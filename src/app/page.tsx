@@ -4,6 +4,13 @@ import Wrapper from '@/components/_common/wrapper';
 import Posts from '@/components/posts';
 import LastPost from '@/components/last-post';
 import Divider from '@/components/_common/divider';
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Cybersecurity and linux blog',
+  description: 'Blog by ley0x. Cybersecurity, linux, bug bounty hunting, web security and more.',
+}
+
 
 export default function Home() {
   const posts = getAllPosts();

@@ -4,6 +4,7 @@ import Wrapper from '@/components/_common/wrapper'
 import { cn } from '@/lib/utils'
 import TableOfContents from '@/components/table-of-contents'
 import PostHeader from '@/components/post-header'
+import type { Metadata } from 'next'
 
 export async function generateStaticParams() {
   const posts = getPostSlugs();
@@ -12,6 +13,36 @@ export async function generateStaticParams() {
 
 type Props = {
   params: Promise<{ slug: string }>;
+}
+
+export async function generateMetadata(
+  { params }: Props,
+): Promise<Metadata> {
+  const slug = (await params).slug;
+
+  const { meta } = await getSerializedPost(slug);
+
+  return {
+    title: meta.title,
+    metadataBase: new URL("https://blog.ley0x.me/posts/"),
+    description: meta.description,
+    openGraph: {
+      images: [meta.image],
+      title: meta.title,
+      description: meta.description,
+      type: "article",
+      url: `https://blog.ley0x.me/posts/${slug}`,
+      siteName: 'blog.ley0x.me',
+      authors: [meta.author],
+    },
+    twitter: {
+      title: meta.title,
+      description: meta.description,
+      images: [meta.image],
+      card: "summary_large_image",
+      creator: meta.author,
+    }
+  }
 }
 
 export default async function Post({ params }: Props) {
