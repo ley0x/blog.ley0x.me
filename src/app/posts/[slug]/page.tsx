@@ -24,7 +24,7 @@ export async function generateMetadata(
 
   return {
     title: meta.title,
-    metadataBase: new URL("https://blog.ley0x.me/posts/"),
+    metadataBase: new URL("https://blog.ley0x.me/"),
     description: meta.description,
     openGraph: {
       images: [meta.image],
